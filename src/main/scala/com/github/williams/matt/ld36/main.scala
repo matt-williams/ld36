@@ -1,10 +1,10 @@
 package com.github.williams.matt.ld36
 
-import scala.scalajs.js.Dynamic
+import scala.scalajs.js
 import scala.scalajs.js.JSApp
 import scala.util.Random
 import org.scalajs.dom
-import org.scalajs.dom.raw.HTMLElement
+import org.scalajs.dom.raw.{ HTMLElement, HTMLImageElement }
 import org.denigma.threejs._
 import org.denigma.threejs.extensions.SceneContainer
 import org.denigma.threejs.extensions.controls.{ HoverControls, CameraControls }
@@ -28,9 +28,8 @@ trait Container3D extends SceneContainer {
   val positionZero = "0"
 
   protected def initRenderer() = {
-    val params = Dynamic.literal(
-      antialias = true,
-      alpha = true // canvas = container
+    val params = js.Dynamic.literal(
+      antialias = true
       ).asInstanceOf[WebGLRendererParameters]
     val vr = new WebGLRenderer(params)
 
@@ -53,24 +52,45 @@ trait Container3D extends SceneContainer {
 }
 
 class Scene(val container: HTMLElement, val width: Double, val height: Double) extends Container3D {
+  var textureLoader = new TextureLoader();
+  val jsonLoader = new JSONLoader();
+  jsonLoader.load("tunnel.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    textureLoader.load("tunnel.png", (texture: Texture) => {
+      val material = new MeshBasicMaterial(js.Dynamic.literal(
+          map = texture
+        ).asInstanceOf[MeshBasicMaterialParameters]);
+      for (x <- 0 to 9) {
+        val mesh = new Mesh(geometry, material);
+        mesh.position.set(0, 0, x * -2000);
+        mesh.scale.set(500, 500, 500);
+        scene.add(mesh);
+      }
+    });
+    ()
+  });
+
+
+/*
   val geometry = new BoxGeometry(350, 300, 250)
 
   val colors = List("green", "red", "blue", "orange", "purple", "teal")
   val colorMap = Map(colors.head -> 0xA1CF64, colors(1) -> 0xD95C5C, colors(2) -> 0x6ECFF5,
     colors(3) -> 0xF05940, colors(4) -> 0x564F8A, colors(5) -> 0x00B5AD)
 
-  def materialParams(name: String): MeshLambertMaterialParameters = Dynamic.literal(
-    color = new Color(colorMap(name)) // wireframe = true
+  def materialParams(name: String): MeshLambertMaterialParameters = js.Dynamic.literal(
+    color = new Color(colorMap(name))
     ).asInstanceOf[MeshLambertMaterialParameters]
 
   def randColorName: String = colors(Random.nextInt(colors.size))
 
   var meshes = addMesh(new Vector3(0, 0, 0)) :: addMesh(new Vector3(400, 0, 200)) :: addMesh(new Vector3(-400, 0, 200)) :: Nil
+*/
 
   val light = new DirectionalLight(0xffffff, 2)
   light.position.set(1, 1, 1).normalize()
   scene.add(light)
 
+/*
   def addMesh(pos: Vector3 = new Vector3()): Mesh = {
     val material = new MeshLambertMaterial(this.materialParams(randColorName))
     val mesh: Mesh = new Mesh(geometry, material)
@@ -80,4 +100,5 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
   }
 
   meshes.foreach(scene.add)
+*/
 }
