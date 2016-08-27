@@ -25,6 +25,16 @@ class AnimationMixerAction extends js.Object {
   def play(): AnimationMixerAction = js.native
   def stop(): AnimationMixerAction = js.native
   def reset(): AnimationMixerAction = js.native
+  def startAt(time: Double): AnimationMixerAction = js.native
+  def setLoop(mode: Int, repetitions: Int): AnimationMixerAction = js.native
+}
+
+@js.native
+@JSName("THREE")
+object MyTHREE extends js.Object {
+  var LoopOnce: Int = js.native
+  var LoopRepeat: Int = js.native
+  var LoopPingPong: Int = js.native
 }
 
 object Main extends JSApp {
@@ -79,9 +89,9 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
       val material = new MeshBasicMaterial(js.Dynamic.literal(
           map = texture
         ).asInstanceOf[MeshBasicMaterialParameters]);
-      for (x <- -9 to 9) {
+      for (z <- -9 to 9) {
         val mesh = new Mesh(geometry, material);
-        mesh.position.set(0, 0, x * -2000);
+        mesh.position.set(0, 0, z * -2000);
         mesh.scale.set(500, 500, 500);
         scene.add(mesh);
       }
@@ -96,17 +106,19 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
           skinning = true
         ).asInstanceOf[MeshBasicMaterialParameters]);
       val anyGeometry = js.Dynamic.literal(geometry = geometry).geometry;
-      println(anyGeometry.animations.selectDynamic("0").name);
-      println(anyGeometry.animations.selectDynamic("1").name);
-      println(anyGeometry.animations.selectDynamic("2").name);
-      for (x <- -9 to 9) {
+      for (i <- 0 to 2) {
+        mixer.clipAction(anyGeometry.animations.selectDynamic(i.toString), ());
+      }
+      for (z <- -9 to 9) {
         val mesh = new SkinnedMesh(geometry, material);
-        mesh.position.set(-100, -400, x * -2000);
+        mesh.position.set(-100, -400, z * -2000);
         mesh.scale.set(500, 500, 500);
         mesh.rotateY(Pi / 2);
         scene.add(mesh);
 
-        mixer.clipAction(anyGeometry.animations.selectDynamic("0"), mesh).play();
+        mixer.clipAction("walk.begin", mesh).setLoop(MyTHREE.LoopOnce, 1).play();
+        mixer.clipAction("walk.cycle", mesh).startAt(1.0).play();
+        //mixer.clipAction("walk.end", mesh).play();
       }
     });
     ()
