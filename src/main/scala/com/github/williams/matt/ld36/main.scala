@@ -70,18 +70,18 @@ trait Container3D extends SceneContainer {
   }
 
   val controls: CameraControls = new HoverControls(camera, this.container)
-  val mixer = new AnimationMixer(scene)
 
   container.appendChild(renderer.domElement)
 
   override def onEnterFrame(): Unit = {
     controls.update()
-    mixer.update(0.015)
     renderer.render(scene, camera)
   }
 }
 
 class Scene(val container: HTMLElement, val width: Double, val height: Double) extends Container3D {
+  val mixer = new AnimationMixer(scene)
+
   val textureLoader = new TextureLoader();
   val jsonLoader = new JSONLoader();
   jsonLoader.load("tunnel.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
@@ -99,6 +99,8 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
     ()
   });
 
+  var golem: Option[SkinnedMesh] = None;
+
   jsonLoader.load("golem.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
     textureLoader.load("golem.png", (texture: Texture) => {
       val material = new MeshBasicMaterial(js.Dynamic.literal(
@@ -109,6 +111,15 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
       for (i <- 0 to 2) {
         mixer.clipAction(anyGeometry.animations.selectDynamic(i.toString), ());
       }
+      val mesh = new SkinnedMesh(geometry, material);
+      mesh.position.set(0, -400, 18000 - 100);
+      mesh.scale.set(500, 500, 500);
+      mesh.rotateY(Pi / 2);
+      scene.add(mesh);
+      mixer.clipAction("walk.begin", mesh).setLoop(MyTHREE.LoopOnce, 1).play();
+      mixer.clipAction("walk.cycle", mesh).startAt(0.833333).play();
+      golem = Some(mesh);
+/*
       for (z <- -9 to 9) {
         val mesh = new SkinnedMesh(geometry, material);
         mesh.position.set(-100, -400, z * -2000);
@@ -117,9 +128,10 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
         scene.add(mesh);
 
         mixer.clipAction("walk.begin", mesh).setLoop(MyTHREE.LoopOnce, 1).play();
-        mixer.clipAction("walk.cycle", mesh).startAt(1.0).play();
+        mixer.clipAction("walk.cycle", mesh).startAt(0.833333).play();
         //mixer.clipAction("walk.end", mesh).play();
       }
+*/
     });
     ()
   });
@@ -127,4 +139,14 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
   val light = new DirectionalLight(0xffffff, 2)
   light.position.set(1, 1, 1).normalize()
   scene.add(light)
+
+  override def onEnterFrame(): Unit = {
+    mixer.update(0.015)
+    golem match {
+      case Some(mesh) => mesh.translateX(600 * 0.015)
+      case None => ()
+    }
+    
+    super.onEnterFrame()
+  }
 }
