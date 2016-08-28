@@ -154,8 +154,8 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
   val textureLoader = new TextureLoader();
   val jsonLoader = new JSONLoader();
-  jsonLoader.load("tunnel.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
-    textureLoader.load("tunnel.png", (texture: Texture) => {
+  jsonLoader.load("floor-ceiling.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    textureLoader.load("floor-ceiling.png", (texture: Texture) => {
       val material = new MeshBasicMaterial(js.Dynamic.literal(
           map = texture
         ).asInstanceOf[MeshBasicMaterialParameters]);
