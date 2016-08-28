@@ -12,6 +12,12 @@ import org.denigma.threejs.extensions.SceneContainer
 import org.denigma.threejs.extensions.controls.{ HoverControls, CameraControls }
 
 @js.native
+@JSName("THREE.PlaneBufferGeometry")
+class PlaneBufferGeometry extends BufferGeometry {
+  def this(width: Double, height: Double) = this()
+}
+
+@js.native
 @JSName("THREE.AnimationMixer")
 class AnimationMixer extends js.Object {
   def this(root: org.denigma.threejs.Scene = js.native) = this()
@@ -97,11 +103,24 @@ trait Container3D extends SceneContainer {
 
 class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMixer) {
   private val mesh = new SkinnedMesh(geometry, material)
-  mesh.scale.set(50, 50, 50);
-  mesh.position.set(-10, -32.5, 0);
+  mesh.position.set(-0.2, -0.65, 0);
+
+  val camera = new PerspectiveCamera(70, 1.0, 0.1, 1000);
+  camera.position.set(0.8, 1.45, 0);
+  camera.rotateY(-Math.PI / 2);
+ 
+  val bufferTexture = new WebGLRenderTarget(512, 512, js.Dynamic.literal(
+    minFilter = 1006, // THREE.LinearFilter,
+    magFilter = 1003 // THREE.NearestFilter
+  ).asInstanceOf[WebGLRenderTargetOptions]);
+
+  val bufferMaterial = new MeshBasicMaterial(js.Dynamic.literal(
+    map = bufferTexture
+  ).asInstanceOf[MeshBasicMaterialParameters]);
 
   val object3d = new Object3D()
   object3d.add(mesh)
+  object3d.add(camera)
 
   val position = object3d.position;
   var _orientation: Double = 0;
@@ -141,7 +160,7 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
       } else {
         orientation += bearingDelta
       }
-      if ((position.distanceTo(target) < 60 * 1.66666) &&
+      if ((position.distanceTo(target) < 1.2 * 1.66666) &&
           ((walkBegin.isRunning()) ||
            (walkCycle.isRunning()))) {
         walkBegin.stop();
@@ -149,13 +168,17 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
         walkEnd.play();
       }
       // object3d automatically considers forward vector when translating
-      if (position.distanceTo(target) < 60 * delta) {
+      if (position.distanceTo(target) < 1.2 * delta) {
         walkEnd.stop();
         object3d.translateX(position.distanceTo(target));
       } else {
-        object3d.translateX(60 * delta);
+        object3d.translateX(1.2 * delta);
       }
     }
+  }
+
+  def renderFromViewpoint(renderer: WebGLRenderer, scene: org.denigma.threejs.Scene) {
+    renderer.render(scene, camera, bufferTexture);
   }
 }
 
@@ -181,9 +204,8 @@ class Tile() {
       case Some(geometry) => _material match {
         case Some(material) => {
        	  val mesh = new Mesh(geometry, material);
-          mesh.scale.set(50, 50, 50);
           mesh.rotateY(orientation * Pi / 2);
-          mesh.position.set(x * 200, 0, z * 200);
+          mesh.position.set(x * 4, 0, z * 4);
           scene.add(mesh);
         }
         case None => ()
@@ -200,7 +222,9 @@ class RotatedTile(val tile: Tile, val orientation: Double) {
 }
 
 class Scene(val container: HTMLElement, val width: Double, val height: Double) extends Container3D {
-  val mixer = new AnimationMixer(scene)
+  val innerScene = new org.denigma.threejs.Scene();
+
+  val mixer = new AnimationMixer(innerScene)
 
   val emptyTile = new Tile();
   val wallTile = new Tile();
@@ -237,7 +261,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
                 case 'v' => 3
                 case _ => 0
               }
-              tile.instantiate(scene, x - 10, z - 10, orientation)
+              tile.instantiate(innerScene, x - 10, z - 10, orientation)
             }
             z = z + 1;
           }
@@ -246,18 +270,29 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
       xhr.send()
 
       val golem = new Golem(golemGeometry, golemGoodMaterial, mixer);
-      scene.add(golem.object3d);
-      golem.position.set(0, 0, -1800);
+      innerScene.add(golem.object3d);
+      golem.position.set(0, 0, -36);
       golem.orientation = -Pi / 2;
-      golem.walkTo(0, -200)
+      golem.walkTo(0, -4)
       golems = golem :: golems;
 
+  val plane = new PlaneBufferGeometry(1000, 1000);
+  val planeObject = new Mesh(plane, golem.bufferMaterial);
+  planeObject.position.x = -600;
+  scene.add(planeObject);
+
       val golem2 = new Golem(golemGeometry, golemEvilMaterial, mixer);
-      scene.add(golem2.object3d);
-      golem2.position.set(0, 0, 1800);
+      innerScene.add(golem2.object3d);
+      golem2.position.set(0, 0, 36);
       golem2.orientation = Pi / 2;
-      golem2.walkTo(0, 200)
+      golem2.walkTo(0, 4)
       golems = golem2 :: golems;
+
+  val plane2 = new PlaneBufferGeometry(1000, 1000);
+  val plane2Object = new Mesh(plane2, golem2.bufferMaterial);
+  plane2Object.position.x = 600;
+  scene.add(plane2Object);
+
     },
     (string: String, double1: Double, double2: Double) => {},
     () => {}
@@ -311,12 +346,16 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
     ).asInstanceOf[MeshBasicMaterialParameters]);
   });
 
+
+
   override def onEnterFrame(): Unit = {
     mixer.update(0.03)
     for (golem <- golems) {
       golem.update(0.03)
+      golem.renderFromViewpoint(renderer, innerScene);
     }
-    
+
+
     super.onEnterFrame()
   }
 }
