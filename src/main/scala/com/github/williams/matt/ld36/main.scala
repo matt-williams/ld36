@@ -172,7 +172,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
   var golems: List[Golem] = List()
 
   jsonLoader.load("golem.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
-    textureLoader.load("golem.png", (texture: Texture) => {
+    textureLoader.load("golem-good.png", (texture: Texture) => {
       val material = new MeshBasicMaterial(js.Dynamic.literal(
           map = texture,
           skinning = true
