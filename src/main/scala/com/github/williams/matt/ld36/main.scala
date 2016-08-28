@@ -3,7 +3,7 @@ package com.github.williams.matt.ld36
 import scala.scalajs.js
 import scala.scalajs.js.annotation._
 import scala.scalajs.js.JSApp
-import scala.math.{ Pi, min, max }
+import scala.math.{ Pi, min, max, rint }
 import scala.util.Random
 import org.scalajs.dom
 import org.scalajs.dom.raw.{ HTMLElement, HTMLImageElement }
@@ -149,9 +149,11 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
     }
   }
 
-  def update(delta: Double): Unit = {
-    if (walkBegin.isRunning() || walkCycle.isRunning() || walkEnd.isRunning()) {
-      val bearingVector = target.clone().sub(position)
+  def isWalking(): Boolean = walkBegin.isRunning() || walkCycle.isRunning() || walkEnd.isRunning()
+
+  def update(delta: Double, golems: List[Golem]): Unit = {
+    if (isWalking()) {
+      val bearingVector = target.clone().sub(position).normalize()
       val bearing = forward.angleTo(bearingVector)
       val bearingDelta = min(Pi / 32, bearing)
       val trialForward = forward.clone().applyAxisAngle(up, bearingDelta)
@@ -160,20 +162,67 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
       } else {
         orientation += bearingDelta
       }
-      if ((position.distanceTo(target) < 1.2 * 1.66666) &&
+
+      val currentX = rint(position.x / 4).toInt
+      val currentZ = rint(position.z / 4).toInt
+      var nextX = rint(position.x / 4).toInt + rint(bearingVector.x)
+      var nextZ = rint(position.x / 4).toInt + rint(bearingVector.z)
+
+      def filterFunction(otherGolem: Golem): Boolean = {
+        if (this == otherGolem) { return false; }
+        val otherX = rint(otherGolem.position.x / 4).toInt;
+        val otherZ = rint(otherGolem.position.z / 4).toInt;
+        if ((currentX == otherX) && (currentZ == otherZ)) { return true; }
+        if ((nextX == otherX) && (nextZ == otherZ)) { return true; }
+        return false;
+      }
+
+      val obstructingGolems = golems.filter(filterFunction)
+
+      if ((obstructingGolems.length > 0) &&
           ((walkBegin.isRunning()) ||
            (walkCycle.isRunning()))) {
         walkBegin.stop();
         walkCycle.stop();
-        walkEnd.play();
-      }
-      // object3d automatically considers forward vector when translating
-      if (position.distanceTo(target) < 1.2 * delta) {
-        walkEnd.stop();
-        object3d.translateX(position.distanceTo(target));
+        walkEnd.setLoop(MyTHREE.LoopOnce, 1).play();
       } else {
-        object3d.translateX(1.2 * delta);
+        if ((position.distanceTo(target) < 1.2 * 1.66666) &&
+            ((walkBegin.isRunning()) ||
+             (walkCycle.isRunning()))) {
+          walkBegin.stop();
+          walkCycle.stop();
+          walkEnd.play();
+        }
+        // object3d automatically considers forward vector when translating
+        if (position.distanceTo(target) < 1.2 * delta) {
+          walkEnd.stop();
+          object3d.translateX(position.distanceTo(target));
+        } else {
+          object3d.translateX(1.2 * delta);
+        }
       }
+    }
+  }
+
+  def think(accessible: Array[Array[Boolean]]) {
+    if (!isWalking() && (Random.nextInt(50) == 0)) {
+      val currentX = rint(position.x / 4).toInt
+      val currentZ = rint(position.z / 4).toInt
+      val (deltaX: Int, deltaZ: Int) = Random.nextInt(4) match {
+        case 0 => (0, 1)
+        case 1 => (1, 0)
+        case 2 => (0, -1)
+        case 3 => (-1, 0)
+      }
+      var freeRange = 1;
+//println("thinking: " + currentX + " + " + deltaX + ", " + currentZ + ", " + deltaZ);
+      while (accessible(currentX + deltaX * freeRange)(currentZ + deltaZ * freeRange)) {
+        freeRange = freeRange + 1;
+//println("thinking: " + currentX + " + " + deltaX + " * " + freeRange + ", " + currentZ + " + " + deltaZ + " * " + freeRange);
+      }
+      val range = Random.nextInt(freeRange)
+//println("thinking: " + range)
+      walkTo((currentX + deltaX * range) * 4, (currentZ + deltaZ * range) * 4)
     }
   }
 
@@ -238,6 +287,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
   var goodGolems: List[Golem] = List()
   var evilGolems: List[Golem] = List()
+  var mapAccessible: Array[Array[Boolean]] = null;
 
   var manager = new LoadingManager(
     () => {
@@ -246,6 +296,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
       xhr.onload = { (e: dom.Event) =>
         if (xhr.status == 200) {
           var z = 0;
+          var maxX = 0;
           for (line <- xhr.responseText.split("\n")) {
             for (x <- 0 to line.length / 2 - 1) {
               val tileChar = line.charAt(x * 2)
@@ -280,13 +331,26 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
               tile.instantiate(innerScene, x, z, orientation)
             }
             z = z + 1;
+            maxX = max(maxX, line.length / 2 - 1);
+          }
+
+          mapAccessible = Array.fill[Boolean](maxX + 1, z)(false);
+          z = 0
+          for (line <- xhr.responseText.split("\n")) {
+            for (x <- 0 to line.length / 2 - 1) {
+              if (line.charAt(x * 2) == ' ') {
+                mapAccessible(x)(z) = true;
+              }
+            }
+            z = z + 1;
           }
 
           var x = 0
           for (golem <- Random.shuffle(goodGolems)) {
-            val plane = new PlaneBufferGeometry(500, 500);
+            val plane = new PlaneBufferGeometry(3000, 3000);
             val planeObject = new Mesh(plane, golem.bufferMaterial);
-            planeObject.position.x = (x - goodGolems.length / 2) * 600;
+            planeObject.position.x = (x - goodGolems.length / 2) * 3600;
+            planeObject.position.z = -4000
             scene.add(planeObject);
             x = x + 1;
           }
@@ -350,8 +414,12 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
   override def onEnterFrame(): Unit = {
     mixer.update(0.03)
-    for (golem <- goodGolems ::: evilGolems) {
-      golem.update(0.03)
+    val golems = goodGolems ::: evilGolems
+    for (golem <- golems) {
+      golem.update(0.03, golems)
+    }
+    for (golem <- evilGolems) {
+      golem.think(mapAccessible)
     }
     for (golem <- goodGolems) {
       golem.renderFromViewpoint(renderer, innerScene);
