@@ -236,7 +236,8 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
   var golemGoodMaterial: MeshBasicMaterial = null;
   var golemEvilMaterial: MeshBasicMaterial = null;
 
-  var golems: List[Golem] = List()
+  var goodGolems: List[Golem] = List()
+  var evilGolems: List[Golem] = List()
 
   var manager = new LoadingManager(
     () => {
@@ -247,8 +248,11 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
           var z = 0;
           for (line <- xhr.responseText.split("\n")) {
             for (x <- 0 to line.length / 2 - 1) {
-              val tile = line.charAt(x * 2) match {
+              val tileChar = line.charAt(x * 2)
+              val tile = tileChar match {
                 case ' ' => emptyTile
+                case 'g' => emptyTile
+                case 'e' => emptyTile
                 case '-' => wallTile
                 case '+' => internalCornerTile
                 case 'L' => externalCornerTile
@@ -261,38 +265,34 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
                 case 'v' => 3
                 case _ => 0
               }
-              tile.instantiate(innerScene, x - 10, z - 10, orientation)
+              if ((tileChar == 'g') || (tileChar == 'e')) {
+                val golem = new Golem(golemGeometry, if (tileChar == 'g') golemGoodMaterial else golemEvilMaterial, mixer);
+                innerScene.add(golem.object3d);
+                golem.position.set(x * 4, 0, z * 4);
+                golem.orientation = orientation * Pi / 2;
+                //golem.walkTo(0, -4)
+                if (tileChar == 'g') {
+                  goodGolems = golem :: goodGolems;
+                } else {
+                  evilGolems = golem :: evilGolems;
+                }
+              }
+              tile.instantiate(innerScene, x, z, orientation)
             }
             z = z + 1;
+          }
+
+          var x = 0
+          for (golem <- Random.shuffle(goodGolems)) {
+            val plane = new PlaneBufferGeometry(500, 500);
+            val planeObject = new Mesh(plane, golem.bufferMaterial);
+            planeObject.position.x = (x - goodGolems.length / 2) * 600;
+            scene.add(planeObject);
+            x = x + 1;
           }
         }
       }
       xhr.send()
-
-      val golem = new Golem(golemGeometry, golemGoodMaterial, mixer);
-      innerScene.add(golem.object3d);
-      golem.position.set(0, 0, -36);
-      golem.orientation = -Pi / 2;
-      golem.walkTo(0, -4)
-      golems = golem :: golems;
-
-  val plane = new PlaneBufferGeometry(1000, 1000);
-  val planeObject = new Mesh(plane, golem.bufferMaterial);
-  planeObject.position.x = -600;
-  scene.add(planeObject);
-
-      val golem2 = new Golem(golemGeometry, golemEvilMaterial, mixer);
-      innerScene.add(golem2.object3d);
-      golem2.position.set(0, 0, 36);
-      golem2.orientation = Pi / 2;
-      golem2.walkTo(0, 4)
-      golems = golem2 :: golems;
-
-  val plane2 = new PlaneBufferGeometry(1000, 1000);
-  val plane2Object = new Mesh(plane2, golem2.bufferMaterial);
-  plane2Object.position.x = 600;
-  scene.add(plane2Object);
-
     },
     (string: String, double1: Double, double2: Double) => {},
     () => {}
@@ -350,11 +350,12 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
   override def onEnterFrame(): Unit = {
     mixer.update(0.03)
-    for (golem <- golems) {
+    for (golem <- goodGolems ::: evilGolems) {
       golem.update(0.03)
+    }
+    for (golem <- goodGolems) {
       golem.renderFromViewpoint(renderer, innerScene);
     }
-
 
     super.onEnterFrame()
   }
