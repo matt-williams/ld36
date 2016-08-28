@@ -38,6 +38,16 @@ object MyTHREE extends js.Object {
   var LoopPingPong: Int = js.native
 }
 
+@js.native
+@JSName("THREE.JSONLoader")
+class JSONLoader extends Loader {
+  def this(manager: LoadingManager = js.native) = this()
+  var withCredentials: Boolean = js.native
+  def load(url: String, callback: js.Function2[JSonLoaderResultGeometry, js.Array[Material], Unit], texturePath: String = js.native): Unit = js.native
+  def loadAjaxJSON(context: JSONLoader, url: String, callback: js.Function2[Geometry, js.Array[Material], Unit], texturePath: String = js.native, callbackProgress: js.Function1[Progress, Unit] = js.native): Unit = js.native
+  def parse(json: String, texturePath: String): js.Dynamic = js.native
+}
+
 object Main extends JSApp {
   def main(): Unit = {
     val el: HTMLElement = dom.document.getElementById("container").asInstanceOf[HTMLElement]
@@ -87,8 +97,8 @@ trait Container3D extends SceneContainer {
 
 class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMixer) {
   private val mesh = new SkinnedMesh(geometry, material)
-  mesh.scale.set(500, 500, 500);
-  mesh.position.set(-100, -400, 0);
+  mesh.scale.set(50, 50, 50);
+  mesh.position.set(-10, -32.5, 0);
 
   val object3d = new Object3D()
   object3d.add(mesh)
@@ -131,7 +141,7 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
       } else {
         orientation += bearingDelta
       }
-      if ((position.distanceTo(target) < 600 * 1.66666) &&
+      if ((position.distanceTo(target) < 60 * 1.66666) &&
           ((walkBegin.isRunning()) ||
            (walkCycle.isRunning()))) {
         walkBegin.stop();
@@ -139,68 +149,167 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
         walkEnd.play();
       }
       // object3d automatically considers forward vector when translating
-      if (position.distanceTo(target) < 600 * delta) {
+      if (position.distanceTo(target) < 60 * delta) {
         walkEnd.stop();
         object3d.translateX(position.distanceTo(target));
       } else {
-        object3d.translateX(600 * delta);
+        object3d.translateX(60 * delta);
       }
     }
+  }
+}
+
+class Tile() {
+  private var _geometry: Option[Geometry] = None;
+  private var _texture: Option[Texture] = None;
+  private var _material: Option[Material] = None;
+
+  def geometry = _geometry.getOrElse(null)
+  def geometry_= (geometry: Geometry) = {
+    _geometry = Option(geometry);
+  }
+  def texture = _texture.getOrElse(null)
+  def texture_= (texture: Texture) = {
+    _texture = Option(texture);
+    _material = Option(new MeshBasicMaterial(js.Dynamic.literal(map = texture).asInstanceOf[MeshBasicMaterialParameters]));
+  }
+
+  def getRotated(orientation: Double): RotatedTile = { return new RotatedTile(this, orientation) }
+
+  def instantiate(scene: org.denigma.threejs.Scene, x: Double, z: Double, orientation: Double) = {
+    _geometry match {
+      case Some(geometry) => _material match {
+        case Some(material) => {
+       	  val mesh = new Mesh(geometry, material);
+          mesh.scale.set(50, 50, 50);
+          mesh.rotateY(orientation * Pi / 2);
+          mesh.position.set(x * 200, 0, z * 200);
+          scene.add(mesh);
+        }
+        case None => ()
+      }
+      case None => ()
+    }
+  }
+}
+
+class RotatedTile(val tile: Tile, val orientation: Double) {
+  def instantiate(scene: org.denigma.threejs.Scene, x: Double, z: Double) = {
+    tile.instantiate(scene, x, z, orientation)
   }
 }
 
 class Scene(val container: HTMLElement, val width: Double, val height: Double) extends Container3D {
   val mixer = new AnimationMixer(scene)
 
-  val textureLoader = new TextureLoader();
-  val jsonLoader = new JSONLoader();
-  jsonLoader.load("floor-ceiling.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
-    textureLoader.load("floor-ceiling.png", (texture: Texture) => {
-      val material = new MeshBasicMaterial(js.Dynamic.literal(
-          map = texture
-        ).asInstanceOf[MeshBasicMaterialParameters]);
-      for (z <- -9 to 9) {
-        val mesh = new Mesh(geometry, material);
-        mesh.position.set(0, 0, z * -2000);
-        mesh.scale.set(500, 500, 500);
-        scene.add(mesh);
-      }
-    });
-    ()
-  });
+  val emptyTile = new Tile();
+  val wallTile = new Tile();
+  val internalCornerTile = new Tile();
+  val externalCornerTile = new Tile();
+  val nullTile = new Tile();
+
+  var golemGeometry: Geometry = null;
+  var golemGoodMaterial: MeshBasicMaterial = null;
+  var golemEvilMaterial: MeshBasicMaterial = null;
 
   var golems: List[Golem] = List()
 
-  jsonLoader.load("golem.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
-    textureLoader.load("golem-good.png", (texture: Texture) => {
-      val material = new MeshBasicMaterial(js.Dynamic.literal(
-          map = texture,
-          skinning = true
-        ).asInstanceOf[MeshBasicMaterialParameters]);
-      val anyGeometry = js.Dynamic.literal(geometry = geometry).geometry;
-      for (i <- 0 to 2) {
-        mixer.clipAction(anyGeometry.animations.selectDynamic(i.toString), ());
+  var manager = new LoadingManager(
+    () => {
+      val xhr = new dom.XMLHttpRequest()
+      xhr.open("GET", "/map.txt")
+      xhr.onload = { (e: dom.Event) =>
+        if (xhr.status == 200) {
+          var z = 0;
+          for (line <- xhr.responseText.split("\n")) {
+            for (x <- 0 to line.length / 2 - 1) {
+              val tile = line.charAt(x * 2) match {
+                case ' ' => emptyTile
+                case '-' => wallTile
+                case '+' => internalCornerTile
+                case 'L' => externalCornerTile
+                case _ => nullTile
+              }
+              val orientation = line.charAt(x * 2 + 1) match {
+                case '>' => 0
+                case '^' => 1
+                case '<' => 2
+                case 'v' => 3
+                case _ => 0
+              }
+              tile.instantiate(scene, x - 10, z - 10, orientation)
+            }
+            z = z + 1;
+          }
+        }
       }
-      val golem = new Golem(geometry, material, mixer);
+      xhr.send()
+
+      val golem = new Golem(golemGeometry, golemGoodMaterial, mixer);
       scene.add(golem.object3d);
-      golem.position.set(0, 0, -18000);
-      //golem.orientation = -Pi / 2;
-      golem.walkTo(0, -2000)
+      golem.position.set(0, 0, -1800);
+      golem.orientation = -Pi / 2;
+      golem.walkTo(0, -200)
       golems = golem :: golems;
 
-      val golem2 = new Golem(geometry, material, mixer);
+      val golem2 = new Golem(golemGeometry, golemEvilMaterial, mixer);
       scene.add(golem2.object3d);
-      golem2.position.set(0, 0, 18000);
+      golem2.position.set(0, 0, 1800);
       golem2.orientation = Pi / 2;
-      golem2.walkTo(0, 2000)
+      golem2.walkTo(0, 200)
       golems = golem2 :: golems;
-    });
-    ()
+    },
+    (string: String, double1: Double, double2: Double) => {},
+    () => {}
+  );
+
+  val textureLoader = new TextureLoader(manager);
+  val jsonLoader = new JSONLoader(manager);
+
+  jsonLoader.load("floor-ceiling.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    emptyTile.geometry = geometry;
+  });
+  textureLoader.load("floor-ceiling.png", (texture: Texture) => {
+    emptyTile.texture = texture;
+  });
+  jsonLoader.load("wall.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    wallTile.geometry = geometry;
+  });
+  textureLoader.load("wall.png", (texture: Texture) => {
+    wallTile.texture = texture;
+  });
+  jsonLoader.load("corner-internal.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    internalCornerTile.geometry = geometry;
+  });
+  textureLoader.load("corner-internal.png", (texture: Texture) => {
+    internalCornerTile.texture = texture;
+  });
+  jsonLoader.load("corner-external.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    externalCornerTile.geometry = geometry;
+  });
+  textureLoader.load("corner-external.png", (texture: Texture) => {
+    externalCornerTile.texture = texture;
   });
 
-  val light = new DirectionalLight(0xffffff, 2)
-  light.position.set(1, 1, 1).normalize()
-  scene.add(light)
+  jsonLoader.load("golem.json", (geometry: JSonLoaderResultGeometry, materials: js.Array[Material]) => {
+    golemGeometry = geometry;
+    val anyGeometry = js.Dynamic.literal(geometry = geometry).geometry;
+    for (i <- 0 to 2) {
+      mixer.clipAction(anyGeometry.animations.selectDynamic(i.toString), ());
+    }
+  });
+  textureLoader.load("golem-good.png", (texture: Texture) => {
+    golemGoodMaterial = new MeshBasicMaterial(js.Dynamic.literal(
+      map = texture,
+      skinning = true
+    ).asInstanceOf[MeshBasicMaterialParameters]);
+  });
+  textureLoader.load("golem-evil.png", (texture: Texture) => {
+    golemEvilMaterial = new MeshBasicMaterial(js.Dynamic.literal(
+      map = texture,
+      skinning = true
+    ).asInstanceOf[MeshBasicMaterialParameters]);
+  });
 
   override def onEnterFrame(): Unit = {
     mixer.update(0.03)
