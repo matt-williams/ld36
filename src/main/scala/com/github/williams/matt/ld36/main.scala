@@ -141,7 +141,14 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
 
   def isWalking(): Boolean = walkBegin.isRunning() || walkCycle.isRunning() || walkEnd.isRunning()
 
+  private var time: Double = 0
+  private var lastMovedTime: Double = 0
+  def timeSinceLastMoved(): Double = {
+    return time - lastMovedTime;
+  }
+
   def update(delta: Double, golems: List[Golem]): Unit = {
+    time = time + delta
     if (isWalking()) {
       val bearingVector = target.clone().sub(position).normalize()
       val bearing = forward.angleTo(bearingVector)
@@ -185,11 +192,18 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
           walkEnd.play();
         }
         // object3d automatically considers forward vector when translating
+        val oldX = rint(position.x / 4).toInt
+        val oldZ = rint(position.z / 4).toInt
         if (position.distanceTo(target) < 1.2 * delta) {
           walkEnd.stop();
           object3d.translateX(position.distanceTo(target));
         } else {
           object3d.translateX(1.2 * delta);
+        }
+        if ((rint(position.x / 4).toInt != oldX) ||
+            (rint(position.z / 4).toInt != oldZ)) {
+println(oldX + ", " + oldZ + " => " + rint(position.x / 4).toInt + ", " + rint(position.z / 4).toInt);
+          lastMovedTime = time;
         }
       }
     }
@@ -425,6 +439,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
 
 
+  var gameOver = false;
   override def onEnterFrame(): Unit = {
     if (mouseX > 0.9) {
       camera.translateX(30);
@@ -449,10 +464,10 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
             } else if (intersect.point.y > 1000) {
               newX = newX - forwardX
               newZ = newZ - forwardZ
-            } else if (intersect.point.x < -1000) {
+            } else if (intersect.point.x - intersect.`object`.position.x < -1000) {
               newX = newX + forwardZ
               newZ = newZ - forwardX
-            } else if (intersect.point.x > 1000) {
+            } else if (intersect.point.x - intersect.`object`.position.x > 1000) {
               newX = newX - forwardZ
               newZ = newZ + forwardX
             }
@@ -474,6 +489,13 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
     }
     for (golem <- goodGolems) {
       golem.renderFromViewpoint(renderer, innerScene);
+    }
+    val blockedGolems = evilGolems.filter((golem: Golem) => golem.timeSinceLastMoved() > 20)
+    if ((evilGolems.length > 0) &&
+        (blockedGolems.length == evilGolems.length) &&
+        (!gameOver)) {
+      dom.window.alert("All evil golems blocked - you win!");
+      gameOver = true;
     }
 
     super.onEnterFrame()
