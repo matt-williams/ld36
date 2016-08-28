@@ -57,13 +57,6 @@ class JSONLoader extends Loader {
 object Main extends JSApp {
   def main(): Unit = {
     val el: HTMLElement = dom.document.getElementById("container").asInstanceOf[HTMLElement]
-/*
-    def resize() = {
-      el.width = dom.window.innerWidth;
-      el.height = dom.window.innerHeight;
-    }
-    val scene = new Scene(el, el.width, el.height)
-*/
     val scene = new Scene(el, dom.window.innerWidth, dom.window.innerHeight)
     scene.render()
   }
@@ -91,12 +84,9 @@ trait Container3D extends SceneContainer {
     vr
   }
 
-  val controls: CameraControls = new HoverControls(camera, this.container)
-
   container.appendChild(renderer.domElement)
 
   override def onEnterFrame(): Unit = {
-    controls.update()
     renderer.render(scene, camera)
   }
 }
@@ -163,10 +153,10 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
         orientation += bearingDelta
       }
 
-      val currentX = rint(position.x / 4).toInt
-      val currentZ = rint(position.z / 4).toInt
-      var nextX = rint(position.x / 4).toInt + rint(bearingVector.x)
-      var nextZ = rint(position.x / 4).toInt + rint(bearingVector.z)
+      val currentX = rint((position.x + bearingVector.x) / 4).toInt
+      val currentZ = rint((position.z + bearingVector.z) / 4).toInt
+      var nextX = currentX + rint(bearingVector.x).toInt
+      var nextZ = currentZ + rint(bearingVector.z).toInt
 
       def filterFunction(otherGolem: Golem): Boolean = {
         if (this == otherGolem) { return false; }
@@ -179,12 +169,13 @@ class Golem(geometry: Geometry, material: MeshBasicMaterial, mixer: AnimationMix
 
       val obstructingGolems = golems.filter(filterFunction)
 
-      if ((obstructingGolems.length > 0) &&
-          ((walkBegin.isRunning()) ||
-           (walkCycle.isRunning()))) {
-        walkBegin.stop();
-        walkCycle.stop();
-        walkEnd.setLoop(MyTHREE.LoopOnce, 1).play();
+      if (obstructingGolems.length > 0) {
+        if ((walkBegin.isRunning()) ||
+            (walkCycle.isRunning())) {
+          walkBegin.stop();
+          walkCycle.stop();
+          walkEnd.setLoop(MyTHREE.LoopOnce, 1).play();
+        }
       } else {
         if ((position.distanceTo(target) < 1.2 * 1.66666) &&
             ((walkBegin.isRunning()) ||
@@ -271,8 +262,29 @@ class RotatedTile(val tile: Tile, val orientation: Double) {
 }
 
 class Scene(val container: HTMLElement, val width: Double, val height: Double) extends Container3D {
+  private var mouseX:Double = 0
+  private var mouseY:Double = 0
+  private var mouseDown: Boolean = false;
+  container.onmousemove = {
+    (e: dom.MouseEvent) => {
+      mouseX = (e.clientX / width) * 2 - 1;
+      mouseY = (e.clientY / height) * 2 - 1;
+    }
+  }
+  container.onmousedown = {
+    (e: dom.MouseEvent) => {
+      mouseDown = true;
+    }
+  }
+  container.onmouseup = {
+    (e: dom.MouseEvent) => {
+      mouseDown = false;
+    }
+  }
+
   val innerScene = new org.denigma.threejs.Scene();
 
+  val raycaster = new Raycaster();
   val mixer = new AnimationMixer(innerScene)
 
   val emptyTile = new Tile();
@@ -338,7 +350,8 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
           z = 0
           for (line <- xhr.responseText.split("\n")) {
             for (x <- 0 to line.length / 2 - 1) {
-              if (line.charAt(x * 2) == ' ') {
+              val tileChar = line.charAt(x * 2)
+              if ((tileChar == ' ') || (tileChar == 'g') || (tileChar == 'e')) {
                 mapAccessible(x)(z) = true;
               }
             }
@@ -349,7 +362,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
           for (golem <- Random.shuffle(goodGolems)) {
             val plane = new PlaneBufferGeometry(3000, 3000);
             val planeObject = new Mesh(plane, golem.bufferMaterial);
-            planeObject.position.x = (x - goodGolems.length / 2) * 3600;
+            planeObject.position.x = (x - goodGolems.length / 2) * 3400;
             planeObject.position.z = -4000
             scene.add(planeObject);
             x = x + 1;
@@ -413,6 +426,44 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
 
 
   override def onEnterFrame(): Unit = {
+    if (mouseX > 0.9) {
+      camera.translateX(30);
+      camera.rotateY(-0.01)
+    } else if (mouseX < -0.9) {
+      camera.translateX(-30);
+      camera.rotateY(0.01)
+    }
+
+    if (mouseDown) {
+      raycaster.setFromCamera(new Vector2(mouseX, mouseY), camera)
+      for (intersect <- raycaster.intersectObjects(scene.children)) {
+        for (golem <- goodGolems) {
+          if (intersect.`object`.asInstanceOf[Mesh].material == golem.bufferMaterial) {
+            val forwardX = rint(golem.forward.x).toInt
+            val forwardZ = rint(golem.forward.z).toInt
+            var newX = rint(golem.position.x / 4).toInt
+            var newZ = rint(golem.position.z / 4).toInt
+            if (intersect.point.y < -1000) {
+              newX = newX + forwardX
+              newZ = newZ + forwardZ
+            } else if (intersect.point.y > 1000) {
+              newX = newX - forwardX
+              newZ = newZ - forwardZ
+            } else if (intersect.point.x < -1000) {
+              newX = newX + forwardZ
+              newZ = newZ - forwardX
+            } else if (intersect.point.x > 1000) {
+              newX = newX - forwardZ
+              newZ = newZ + forwardX
+            }
+            if (mapAccessible(newX)(newZ)) {
+              golem.walkTo(newX * 4, newZ * 4)
+            }
+          }
+        }
+      }
+    }
+
     mixer.update(0.03)
     val golems = goodGolems ::: evilGolems
     for (golem <- golems) {
