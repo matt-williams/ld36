@@ -318,7 +318,7 @@ class Scene(val container: HTMLElement, val width: Double, val height: Double) e
   var manager = new LoadingManager(
     () => {
       val xhr = new dom.XMLHttpRequest()
-      xhr.open("GET", "/map.txt")
+      xhr.open("GET", "map.txt")
       xhr.onload = { (e: dom.Event) =>
         if (xhr.status == 200) {
           var z = 0;
