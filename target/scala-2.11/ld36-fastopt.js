@@ -6270,7 +6270,7 @@ function $h_Lcom_github_williams_matt_ld36_Scene$$anonfun$1() {
 $h_Lcom_github_williams_matt_ld36_Scene$$anonfun$1.prototype = $c_Lcom_github_williams_matt_ld36_Scene$$anonfun$1.prototype;
 $c_Lcom_github_williams_matt_ld36_Scene$$anonfun$1.prototype.apply$mcV$sp__V = (function() {
   var xhr = new $g.XMLHttpRequest();
-  xhr.open("GET", "/map.txt");
+  xhr.open("GET", "map.txt");
   xhr.onload = (function(f) {
     return (function(arg1) {
       return f.apply__O__O(arg1)
